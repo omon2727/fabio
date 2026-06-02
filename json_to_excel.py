@@ -2,86 +2,114 @@ import json
 import pandas as pd
 from datetime import datetime
 
-def json_to_excel(json_file="all_products_full_data.json", output_excel="Fabio_Airsprings_Products.xlsx"):
+
+def json_to_excel(json_file="all_products_full_data.json", 
+                  output_excel="Fabio_Airsprings_Products.xlsx"):
     """
-    Конвертирует JSON с товарами в удобный Excel файл
+    Конвертирует JSON в Excel + удаляет дубли по артикулу + добавляет OEM
     """
     print(f"Загружаем файл: {json_file}")
     
     with open(json_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    print(f"Найдено товаров: {len(data)}")
+    print(f"Найдено товаров в JSON: {len(data)}")
     
-    # Подготовим данные для Excel
-    rows = []
+    # === УДАЛЕНИЕ ДУБЛИКАТОВ ПО АРТИКУЛУ ===
+    seen = set()
+    unique_data = []
     
     for product in data:
+        article = product.get("article", "").strip()
+        if article and article not in seen:
+            seen.add(article)
+            unique_data.append(product)
+    
+    print(f"После удаления дублей осталось: {len(unique_data)} товаров")
+    
+    # Подготовка строк для Excel
+    rows = []
+    
+    for product in unique_data:
         article = product.get("article", "")
         category = product.get("category", "")
         cat_from_catalog = product.get("category_name_from_catalog", "")
         url = product.get("product_url", "")
         
+        oem_list = product.get("oem", [])
         cross_list = product.get("cross", [])
         
-        if not cross_list:
-            # Если CROSS нет — добавляем одну строку
+        # Если нет ни OEM, ни CROSS — одна пустая строка
+        if not oem_list and not cross_list:
             rows.append({
                 "Артикул": article,
-                "Категория (на странице)": category,
-                "Категория (из каталога)": cat_from_catalog,
+                "Название": category,
+                "Категория каталога": cat_from_catalog,
+                "Бренд OEM": "",
+                "Номер OEM": "",
                 "Бренд Cross": "",
                 "Номер Cross": "",
                 "Ссылка": url
             })
         else:
-            # Если есть CROSS — создаём отдельную строку для каждого
-            for cross in cross_list:
-                rows.append({
+            # Создаём строки для всех комбинаций OEM + CROSS
+            max_len = max(len(oem_list), len(cross_list))
+            for i in range(max_len):
+                row = {
                     "Артикул": article,
-                    "Категория (на странице)": category,
-                    "Категория (из каталога)": cat_from_catalog,
-                    "Бренд Cross": cross.get("brand", ""),
-                    "Номер Cross": cross.get("number", ""),
+                    "Название": category,
+                    "Категория каталога": cat_from_catalog,
+                    "Бренд OEM": "",
+                    "Номер OEM": "",
+                    "Бренд Cross": "",
+                    "Номер Cross": "",
                     "Ссылка": url
-                })
+                }
+                
+                if i < len(oem_list):
+                    row["Бренд OEM"] = oem_list[i].get("brand", "")
+                    row["Номер OEM"] = oem_list[i].get("number", "")
+                
+                if i < len(cross_list):
+                    row["Бренд Cross"] = cross_list[i].get("brand", "")
+                    row["Номер Cross"] = cross_list[i].get("number", "")
+                
+                rows.append(row)
     
-    # Создаём DataFrame
     df = pd.DataFrame(rows)
     
     # Упорядочиваем колонки
     columns_order = [
         "Артикул",
-        "Категория (на странице)",
-        "Категория (из каталога)",
+        "Название",
+        "Категория каталога",
+        "Бренд OEM",
+        "Номер OEM",
         "Бренд Cross",
         "Номер Cross",
         "Ссылка"
     ]
     df = df[columns_order]
     
-    # Сохраняем в Excel
+    # Сохранение в Excel
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     output_file = f"Fabio_Airsprings_Products_{timestamp}.xlsx"
     
     with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name="Все товары", index=False)
+        df.to_excel(writer, sheet_name="Товары", index=False)
         
-        # Добавляем лист со статистикой
+        # Лист со статистикой
         stats = {
-            "Всего товаров": len(data),
-            "Всего записей Cross": len(df),
+            "Всего уникальных артикулов": len(unique_data),
+            "Всего строк в таблице": len(df),
             "Дата выгрузки": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
         pd.DataFrame([stats]).to_excel(writer, sheet_name="Статистика", index=False)
     
-    print(f"\n✅ Успешно сохранено в файл:")
+    print(f"\n✅ Файл успешно сохранён:")
     print(f"   {output_file}")
+    print(f"   Уникальных артикулов: {len(unique_data)}")
     print(f"   Строк в таблице: {len(df)}")
-    
-    # Дополнительно выводим пример
-    print("\nПример первых 5 строк:")
-    print(df.head().to_string(index=False))
     
     return output_file
 
@@ -89,6 +117,6 @@ def json_to_excel(json_file="all_products_full_data.json", output_excel="Fabio_A
 # ====================== ЗАПУСК ======================
 if __name__ == "__main__":
     json_to_excel(
-        json_file="all_products_full_data.json",      # ← поменяй, если файл называется иначе
-        output_excel="Fabio_Airsprings_Products.xlsx"
+        json_file="all_products_full_data.json",   # ← укажи свой файл
     )
+

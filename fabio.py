@@ -246,73 +246,77 @@ def get_product_data_selenium(driver, product_url):
 
 
 
-def parse_product_page(html):
-    from bs4 import BeautifulSoup
-    import re
-    
+def parse_product_page(html, product_url=""):
+    """Парсит страницу товара: article, category, OEM, CROSS и доп. данные"""
     soup = BeautifulSoup(html, 'html.parser')
     
     data = {
         "article": "",
         "category": "",
-        "cross": [],
-        "product_url": "",
-        "category_name_from_catalog": ""
+        "oem": [],           # Новый список для OEM
+        "cross": [],         # CROSS (как было)
+        "product_url": product_url,
+        "category_name_from_catalog": "",
+        "weight": "",
+        "pallet_size": "",
+        "pallet_qty": "",
+        "title": ""          # Полное название из h1
     }
     
-    # Артикул
+    # === 1. Артикул ===
     article_tag = soup.find('p', style=re.compile(r'font-size:30px', re.I))
     if article_tag:
         data["article"] = article_tag.get_text(strip=True)
     
-    # Категория
+    # Запасной вариант поиска артикула
+    if not data["article"]:
+        article_tag = soup.find('p', string=re.compile(r'\d{4,5}-\d{2,}', re.I))
+        if article_tag:
+            data["article"] = article_tag.get_text(strip=True)
+
+    # === 2. Название товара (h1) ===
     h1 = soup.find('h1')
     if h1:
-        data["category"] = h1.get_text(strip=True)
-    
-    # Таблица CROSS
+        data["category"] = h1.get_text(strip=True)   # или title
+        data["title"] = h1.get_text(strip=True)
+
+    # === 3. Парсинг таблиц OEM и CROSS ===
     tables = soup.find_all('table')
+    
     for table in tables:
-        if table.find('th') and any('CROSS' in th.get_text() for th in table.find_all('th')):
-            rows = table.find_all('tr')
-            for row in rows:
-                tds = row.find_all('td')
-                if len(tds) >= 2:
-                    brand = tds[0].get_text(strip=True)
-                    number = tds[1].get_text(strip=True)
-                    if brand.lower() not in ['бренд', 'brand'] and brand and number:
-                        data["cross"].append({"brand": brand, "number": number})
-            break
+        thead = table.find('thead')
+        if not thead:
+            continue
+            
+        header_text = thead.get_text(strip=True).upper()
+        
+        # Определяем тип таблицы
+        if 'OEM' in header_text:
+            target_list = data["oem"]
+        elif 'CROSS' in header_text:
+            target_list = data["cross"]
+        else:
+            continue
+        
+        rows = table.find_all('tr')
+        for row in rows:
+            tds = row.find_all('td')
+            if len(tds) >= 2:
+                brand = tds[0].get_text(strip=True)
+                number = tds[1].get_text(strip=True)
+                
+                # Пропускаем заголовки строк
+                if brand.lower() in ['бренд', 'brand', 'нет.', 'no.']:
+                    continue
+                    
+                if brand and number:
+                    target_list.append({
+                        "brand": brand,
+                        "number": number
+                    })
+    
     
     return data
-
-
-
-# def main():
-#     """Главная функция"""
-
-#     result = []  # результирующий массив. сюда складывам все ссылки на товары
-
-#     ua = UserAgent()  # Экхемппляр классса фейс юзер агент
-#     headers = {'User-Agent': ua.random,
-#                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}  # заголовки
-#     session = requests.Session()  # Экхемппляр классса  сессии. Главный объект для сетевых запросов
-#     session.headers.update(headers)  # прокидываем хедерс в объект сессии
-
-#     # получаем список категорий. списко категорий содержит пару: имя и ссылка
-#     root_catalog_url = "https://fabioairsprings.com/ru/produkty"
-#     categories_list = get_categories(root_catalog_url, session)  # возвращает пару: имя и ссылка на категорию
-
-#     for cat in categories_list:
-#         print(cat['category_name'], "->", cat['category_url'])
-
-#     print(f"\nНайдено категорий: {len(categories_list)}\n")
-
-#     all_products = []
-
-#     for cat in categories_list:
-#         print(f"\nОбрабатываю категорию: {cat['category_name']}")
-#         urls = collect_urls_from_catalog_page_selenium(cat['category_url'])
 
 
 
@@ -419,3 +423,6 @@ def main():
 if __name__ == "__main__":
       main()
 
+
+
+      
